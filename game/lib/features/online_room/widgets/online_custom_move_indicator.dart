@@ -9,7 +9,7 @@ import '../../services/game_history_uploader.dart';
 import '../controllers/game_controller.dart';
 import '../controllers/board_ui_controller.dart';
 
-class OnlineCustomMoveIndicator extends StatefulWidget {
+class OnlineCustomMoveIndicator extends StatelessWidget {
   final String gameId;
   final String playerId;
   final int initialTimeMs;
@@ -20,30 +20,6 @@ class OnlineCustomMoveIndicator extends StatefulWidget {
     required this.playerId,
     required this.initialTimeMs,
   });
-
-  @override
-  State<OnlineCustomMoveIndicator> createState() =>
-      _OnlineCustomMoveIndicatorState();
-}
-
-class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
-  bool blackAtBottom = false;
-  BoardArrow? _lastMoveArrowCoordinates;
-  final _highlightCells = <String, Color>{};
-  bool _createdMissingGame = false;
-  bool _joinAttempted = false;
-  bool _committingTimeout = false;
-  bool _endedDialogShown = false;
-  bool _historyUploaded = false;
-  late final GameController gameCtrl;
-  late final BoardUiController boardCtrl;
-  // Captured strips now reactive via boardCtrl
-
-  // Review Mode state
-  bool _reviewMode = false;
-  MoveHistory _moveHistory =
-      MoveHistory(initialFen: chesslib.Chess.DEFAULT_POSITION);
-  int _lastSyncedMoveCount = 0;
 
   CollectionReference<Map<String, dynamic>> get games =>
       FirebaseFirestore.instance.collection('games');
@@ -80,118 +56,20 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
     );
   }
 
-  @override
-  void initState() {
-    super.initState();
-    gameCtrl = Get.put(GameController(), tag: widget.gameId);
-    boardCtrl = Get.put(BoardUiController(), tag: 'board-${widget.gameId}');
-    gameCtrl.startUiTick();
-    // Initialize GetX flags
-    boardCtrl.setReviewMode(false);
-    boardCtrl.setSubmitting(false);
-  }
-
-  @override
-  void dispose() {
-    // Remove controller for this gameId
-    Get.delete<GameController>(tag: widget.gameId, force: true);
-    Get.delete<BoardUiController>(tag: 'board-${widget.gameId}', force: true);
-    super.dispose();
-  }
-
-  void _syncMoveHistory(List<String> moves) {
-    // Only rebuild when move count changes to avoid setState loops
-    if (moves.length == _lastSyncedMoveCount) return;
-    final mh = MoveHistory(initialFen: chesslib.Chess.DEFAULT_POSITION);
-    final chess = chesslib.Chess.fromFEN(chesslib.Chess.DEFAULT_POSITION);
-    for (final m in moves) {
-      if (m.length < 4) continue;
-      final from = m.substring(0, 2);
-      final to = m.substring(2, 4);
-      final promotion = m.length > 4 ? m.substring(4, 5) : null;
-      final success = chess.move(<String, String?>{
-        'from': from,
-        'to': to,
-        'promotion': promotion,
-      });
-      if (!success) {
-        // If a move fails, stop syncing further to avoid wrong snapshots
-        break;
-      }
-      mh.addMove(move: m, fen: chess.fen);
+  void _printMoves(List<String> mvs) {
+    debugPrint('===== Game history (${mvs.length} moves) =====');
+    for (int i = 0; i < mvs.length; i++) {
+      debugPrint('${i + 1}. ${mvs[i]}');
     }
-    // Update local state without setState, since we are inside a StreamBuilder build
-    _moveHistory = mh;
-    _lastSyncedMoveCount = moves.length;
-    // When not reviewing, follow live at end
-    if (!_reviewMode) {
-      if (_moveHistory.length > 0) {
-        _moveHistory.goToIndex(_moveHistory.length - 1);
-      } else {
-        _moveHistory.goToIndex(-1);
-      }
-    } else {
-      // Clamp index if new moves appended
-      if (_moveHistory.currentIndex > _moveHistory.length - 1) {
-        _moveHistory.goToIndex(_moveHistory.length - 1);
-      }
-    }
-  }
-
-  BoardArrow? _reviewArrow() {
-    final idx = _moveHistory.currentIndex;
-    final m = _moveHistory.getMoveAt(idx);
-    if (m == null) return null;
-    final mv = m.move;
-    if (mv.length < 4) return null;
-    return BoardArrow(from: mv.substring(0, 2), to: mv.substring(2, 4));
-  }
-
-  Widget _reviewToggle() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6.0),
-      child: Obx(
-        () => Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('Review Mode'),
-            const SizedBox(width: 10),
-            Switch(
-              value: boardCtrl.reviewMode.value,
-              onChanged: (v) {
-                boardCtrl.setReviewMode(v);
-                setState(() {
-                  _reviewMode = v;
-                  // When entering review, default to end of history
-                  if (v) {
-                    if (_moveHistory.length > 0) {
-                      _moveHistory.goToIndex(_moveHistory.length - 1);
-                    } else {
-                      _moveHistory.goToIndex(-1);
-                    }
-                  }
-                });
-              },
-            ),
-          ],
-        ),
-      ),
-    );
+    debugPrint('===== End history =====');
   }
 
   void _showEndDialog({
+    required BuildContext context,
     required String winnerColor,
     required List<String> moves,
     String? playerColor,
   }) {
-    void _printMoves(List<String> mvs) {
-      debugPrint('===== Game history (${mvs.length} moves) =====');
-      for (int i = 0; i < mvs.length; i++) {
-        debugPrint('${i + 1}. ${mvs[i]}');
-      }
-      debugPrint('===== End history =====');
-    }
-
     final youWon = playerColor != null && playerColor == winnerColor;
     final youLost = playerColor != null && playerColor != winnerColor;
     final title = youWon
@@ -206,7 +84,6 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
       builder: (context) {
         return WillPopScope(
           onWillPop: () async {
-            // Print history when back is pressed; keep dialog open
             _printMoves(moves);
             return false;
           },
@@ -243,9 +120,8 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
             actions: [
               TextButton(
                 onPressed: () {
-                  // Print and navigate home
                   _printMoves(moves);
-                  Navigator.of(context).pop(); // close dialog
+                  Navigator.of(context).pop();
                   Navigator.of(context).popUntil((route) => route.isFirst);
                 },
                 child: const Text('Go Home'),
@@ -257,9 +133,11 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
     );
   }
 
-  Future<void> _tryMoveTransactional(
-      {required ShortMove move, required String currentFen}) async {
-    final gameRef = games.doc(widget.gameId);
+  Future<void> _tryMoveTransactional({
+    required ShortMove move,
+    required String currentFen,
+  }) async {
+    final gameRef = games.doc(gameId);
     await FirebaseFirestore.instance.runTransaction((tx) async {
       final snap = await tx.get(gameRef);
       if (!snap.exists) {
@@ -283,8 +161,7 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
       }
       // Enforce turn
       final sideToMoveIsWhite = serverFen.split(' ')[1] == 'w';
-      final playerColor =
-          data['players']?[widget.playerId] as String?; // 'w' or 'b'
+      final playerColor = data['players']?[playerId] as String?; // 'w' or 'b'
       if (playerColor == null ||
           (sideToMoveIsWhite && playerColor != 'w') ||
           (!sideToMoveIsWhite && playerColor != 'b')) {
@@ -298,10 +175,9 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
       final players = Map<String, dynamic>.from(data['players'] ?? const {});
       final bothSeated =
           players.values.contains('w') && players.values.contains('b');
-      int whiteTimeMs = (data['whiteTimeMs'] as int?) ?? widget.initialTimeMs;
-      int blackTimeMs = (data['blackTimeMs'] as int?) ?? widget.initialTimeMs;
+      int whiteTimeMs = (data['whiteTimeMs'] as int?) ?? initialTimeMs;
+      int blackTimeMs = (data['blackTimeMs'] as int?) ?? initialTimeMs;
       final prevMoveCount = List<String>.from(data['moves'] ?? const []).length;
-      // Clocks are active only if both seated and at least one move exists
       final clocksActiveBefore = bothSeated && prevMoveCount > 0;
       final elapsedMs =
           clocksActiveBefore ? now.difference(lastTurnAt).inMilliseconds : 0;
@@ -349,10 +225,10 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
     });
   }
 
-  Future<void> _ensureAutoJoin(
-      DocumentReference<Map<String, dynamic>> gameRef) async {
-    if (_joinAttempted) return;
-    _joinAttempted = true;
+  Future<void> _ensureAutoJoin(DocumentReference<Map<String, dynamic>> gameRef,
+      GameController gameCtrl, BoardUiController boardCtrl) async {
+    if (gameCtrl.joinAttempted.value) return;
+    gameCtrl.joinAttempted.value = true;
     try {
       await FirebaseFirestore.instance.runTransaction((tx) async {
         final snap = await tx.get(gameRef);
@@ -361,11 +237,9 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
         }
         final data = snap.data()!;
         final players = Map<String, dynamic>.from(data['players'] ?? const {});
-        // If already assigned, do nothing
-        if (players.containsKey(widget.playerId)) return;
+        if (players.containsKey(playerId)) return;
         final whiteTaken = players.values.contains('w');
         final blackTaken = players.values.contains('b');
-        // Assign first available color; prefer white, else black
         String? assignColor;
         if (!whiteTaken) {
           assignColor = 'w';
@@ -373,28 +247,27 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
           assignColor = 'b';
         }
         if (assignColor == null) {
-          // Both seats taken; remain spectator
           return;
         }
-        players[widget.playerId] = assignColor;
+        players[playerId] = assignColor;
         tx.update(gameRef, {
           'players': players,
           'updatedAt': FieldValue.serverTimestamp(),
         });
         // Default orientation based on assignment
-        blackAtBottom = assignColor == 'b';
+        boardCtrl.blackAtBottom.value = assignColor == 'b';
       });
-      setState(() {});
     } catch (_) {
-      // Ignore errors; user will spectate if join fails
+      // Ignore
     }
   }
 
   Future<void> _commitTimeoutIfNeeded(
       DocumentReference<Map<String, dynamic>> gameRef,
-      String winnerColor) async {
-    if (_committingTimeout) return;
-    _committingTimeout = true;
+      String winnerColor,
+      GameController gameCtrl) async {
+    if (gameCtrl.committingTimeout.value) return;
+    gameCtrl.committingTimeout.value = true;
     try {
       await FirebaseFirestore.instance.runTransaction((tx) async {
         final snap = await tx.get(gameRef);
@@ -409,17 +282,17 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
         final bothSeated =
             players.values.contains('w') && players.values.contains('b');
         final clocksActive = bothSeated && moves.isNotEmpty;
-        if (!clocksActive) return; // clocks not started yet
+        if (!clocksActive) return;
         final lastTurnTs = data['lastTurnAt'] as Timestamp?;
         final lastTurnAt = lastTurnTs?.toDate() ?? DateTime.now();
         final now = DateTime.now();
-        int whiteTimeMs = (data['whiteTimeMs'] as int?) ?? widget.initialTimeMs;
-        int blackTimeMs = (data['blackTimeMs'] as int?) ?? widget.initialTimeMs;
+        int whiteTimeMs = (data['whiteTimeMs'] as int?) ?? initialTimeMs;
+        int blackTimeMs = (data['blackTimeMs'] as int?) ?? initialTimeMs;
         final elapsedMs = now.difference(lastTurnAt).inMilliseconds;
         int loserRemaining = sideToMoveIsWhite
             ? (whiteTimeMs - elapsedMs)
             : (blackTimeMs - elapsedMs);
-        if (loserRemaining > 0) return; // Not yet timed out
+        if (loserRemaining > 0) return;
         tx.update(gameRef, {
           'status': 'ended',
           'winner': winnerColor,
@@ -430,355 +303,46 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
         });
       });
     } catch (_) {
-      // Ignore
     } finally {
-      _committingTimeout = false;
+      gameCtrl.committingTimeout.value = false;
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final gameDoc = games.doc(widget.gameId);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Online Game'),
-        // Orientation now follows player color automatically
-      ),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: gameDoc.snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            if (!_createdMissingGame) {
-              _createdMissingGame = true;
-              // Auto-create game document with empty players map
-              games.doc(widget.gameId).set({
-                'fen': chesslib.Chess.DEFAULT_POSITION,
-                'moves': <String>[],
-                'updatedAt': FieldValue.serverTimestamp(),
-                'players': <String, String>{},
-                'whiteTimeMs': widget.initialTimeMs,
-                'blackTimeMs': widget.initialTimeMs,
-                'lastTurnAt': FieldValue.serverTimestamp(),
-                'status': 'ongoing',
-                'winner': null,
-              });
-            }
-            return const Center(child: CircularProgressIndicator());
-          }
-          final data = snapshot.data!.data()!;
-          final players =
-              Map<String, dynamic>.from(data['players'] ?? const {});
-          final playerColor = players[widget.playerId] as String?;
-          // Auto-join if a seat is open
-          if (playerColor == null &&
-              (!players.values.contains('w') ||
-                  !players.values.contains('b'))) {
-            _ensureAutoJoin(gameDoc);
-            return const Center(child: CircularProgressIndicator());
-          }
-          final fen =
-              (data['fen'] as String?) ?? chesslib.Chess.DEFAULT_POSITION;
-          final sideToMoveIsWhite = fen.split(' ')[1] == 'w';
-          final status = (data['status'] as String?) ?? 'ongoing';
-          final winnerColor = data['winner'] as String?;
-          int whiteTimeMs =
-              (data['whiteTimeMs'] as int?) ?? widget.initialTimeMs;
-          int blackTimeMs =
-              (data['blackTimeMs'] as int?) ?? widget.initialTimeMs;
-          final lastTurnTs = data['lastTurnAt'] as Timestamp?;
-          final lastTurnAt = lastTurnTs?.toDate();
-          final moves = List<String>.from(data['moves'] ?? const []);
-          final moveCount = moves.length;
-          final bothSeated =
-              players.values.contains('w') && players.values.contains('b');
-          // Sync local move history snapshots for Review Mode
-          _syncMoveHistory(moves);
-          // Update controller from snapshot for reactive labels
-          gameCtrl.updateFromSnapshot(
-            newFen: fen,
-            newStatus: status,
-            newWinner: winnerColor,
-            newWhiteTimeMs: whiteTimeMs,
-            newBlackTimeMs: blackTimeMs,
-            newLastTurnAt: lastTurnAt,
-            newMoveCount: moveCount,
-            newBothSeated: bothSeated,
-          );
-          final lastMoveStr = data['lastMove'] as String?;
-          BoardArrow? lastArrow;
-          if (lastMoveStr != null && lastMoveStr.length >= 4) {
-            lastArrow = BoardArrow(
-                from: lastMoveStr.substring(0, 2),
-                to: lastMoveStr.substring(2, 4));
-          }
-
-          // Show end-of-game dialog once when stream reports ended
-          if (status == 'ended' && winnerColor != null && !_endedDialogShown) {
-            _endedDialogShown = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _showEndDialog(
-                winnerColor: winnerColor,
-                moves: moves,
-                playerColor: playerColor,
-              );
-            });
-            // Trigger one-time upload of game history
-            if (!_historyUploaded) {
-              _historyUploaded = true;
-              // Use local synced history snapshots
-              Future.microtask(() async {
-                try {
-                  await GameHistoryUploader.uploadGameHistory(
-                    gameId: widget.gameId,
-                    playerId: widget.playerId,
-                    winnerColor: winnerColor,
-                    history: _moveHistory.history,
-                  );
-                } catch (_) {}
-              });
-            }
-          }
-
-          Future<void> submitMove({required ShortMove move}) async {
-            try {
-              if (playerColor == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('You are spectating. Join to play.')),
-                );
-                return;
-              }
-              boardCtrl.setSubmitting(true);
-              await _tryMoveTransactional(move: move, currentFen: fen);
-              // Avoid local setState to reduce flicker; rely on stream update
-            } catch (e) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Move rejected: $e')),
-              );
-            } finally {
-              boardCtrl.setSubmitting(false);
-            }
-          }
-
-          final whiteTaken = players.values.contains('w');
-          final blackTaken = players.values.contains('b');
-          // Derive player labels for display
-          String? whitePlayerId;
-          String? blackPlayerId;
-          for (final entry in players.entries) {
-            if (entry.value == 'w') whitePlayerId = entry.key;
-            if (entry.value == 'b') blackPlayerId = entry.key;
-          }
-          // Labels driven by GetX controller, only text rebuilds
-          final whiteLabelWidget = Obx(() => Text(
-                'White: ${whitePlayerId ?? 'Waiting'}  ${gameCtrl.whiteLabel.value}',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ));
-          final blackLabelWidget = Obx(() => Text(
-                'Black: ${blackPlayerId ?? 'Waiting'}  ${gameCtrl.blackLabel.value}',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ));
-
-          // If clock expired on side to move and game not ended, commit timeout
-          // Timers only active after both seated and at least one move (white moved)
-          if (status == 'ongoing' && (bothSeated && moveCount > 0)) {
-            final now = DateTime.now();
-            final elapsedMs = lastTurnAt != null
-                ? now.difference(lastTurnAt).inMilliseconds
-                : 0;
-            final whiteRemain =
-                whiteTimeMs - (sideToMoveIsWhite ? elapsedMs : 0);
-            final blackRemain =
-                blackTimeMs - (!sideToMoveIsWhite ? elapsedMs : 0);
-            final timedOutWhite = sideToMoveIsWhite && whiteRemain <= 0;
-            final timedOutBlack = !sideToMoveIsWhite && blackRemain <= 0;
-            if (timedOutWhite) {
-              _commitTimeoutIfNeeded(gameDoc, 'b');
-            } else if (timedOutBlack) {
-              _commitTimeoutIfNeeded(gameDoc, 'w');
-            }
-          }
-
-          if (playerColor == null && whiteTaken && blackTaken) {
-            // Game is full; allow spectating but prevent moving
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _reviewToggle(),
-                if (status == 'ended' && winnerColor != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: Text(
-                        'Game over. Winner: ${winnerColor == 'w' ? 'White' : 'Black'}'),
-                  ),
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8.0),
-                  child: Text('Game is full. You are spectating.'),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6.0),
-                  child: blackLabelWidget,
-                ),
-                // Top captured strip for spectator view: top is Black
-                Obx(() => CapturedPiecesStrip(
-                      pieces: boardCtrl.blackCaptured.toList(),
-                      showAsBlackPieces: false,
-                    )),
-                Obx(() => Container(
-                      decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white)),
-                      child: _boardOnly(
-                        fen: boardCtrl.reviewMode.value
-                            ? _moveHistory.currentFen
-                            : fen,
-                        lastArrow: boardCtrl.reviewMode.value
-                            ? _reviewArrow()
-                            : lastArrow,
-                        onMove: ({required ShortMove move}) async =>
-                            submitMove(move: move),
-                        blackSideAtBottom: false,
-                        isInteractive: false,
-                        nonInteractiveText: boardCtrl.reviewMode.value
-                            ? 'REVIEW MODE'
-                            : 'SPECTATING',
-                        engineThinking: boardCtrl.isSubmitting.value &&
-                            !boardCtrl.reviewMode.value,
-                      ),
-                    )),
-                Obx(() => boardCtrl.reviewMode.value
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: MoveNavigationControls(
-                          moveHistory: _moveHistory,
-                          onGoBack: () => setState(() {
-                            _moveHistory.goBack();
-                          }),
-                          onGoForward: () => setState(() {
-                            _moveHistory.goForward();
-                          }),
-                          onGoToStart: () => setState(() {
-                            _moveHistory.goToIndex(-1);
-                          }),
-                          onGoToEnd: () => setState(() {
-                            if (_moveHistory.length > 0) {
-                              _moveHistory.goToIndex(_moveHistory.length - 1);
-                            }
-                          }),
-                        ),
-                      )
-                    : const SizedBox.shrink()),
-                // Bottom captured strip: bottom is White
-                Obx(() => CapturedPiecesStrip(
-                      pieces: boardCtrl.whiteCaptured.toList(),
-                      showAsBlackPieces: true,
-                    )),
-                Padding(
-                  padding: const EdgeInsets.only(top: 6.0),
-                  child: whiteLabelWidget,
-                ),
-              ],
-            );
-          }
-
-          // No manual join; auto-assignment handles seating
-
-          // Already a player: render interactive board
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _reviewToggle(),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6.0),
-                child:
-                    (playerColor == 'b') ? whiteLabelWidget : blackLabelWidget,
-              ),
-              // Top captured strip shows pieces captured by the opponent at top
-              Obx(() {
-                final topPieces = (playerColor == 'b')
-                    ? boardCtrl.whiteCaptured.toList()
-                    : boardCtrl.blackCaptured.toList();
-                final showBlackIcons = (playerColor == 'b') ? true : false;
-                return CapturedPiecesStrip(
-                  pieces: topPieces,
-                  showAsBlackPieces: showBlackIcons,
-                );
-              }),
-              Obx(() => Container(
-                    decoration:
-                        BoxDecoration(border: Border.all(color: Colors.white)),
-                    child: _boardOnly(
-                      fen: boardCtrl.reviewMode.value
-                          ? _moveHistory.currentFen
-                          : fen,
-                      lastArrow: boardCtrl.reviewMode.value
-                          ? _reviewArrow()
-                          : lastArrow,
-                      onMove: ({required ShortMove move}) async =>
-                          submitMove(move: move),
-                      blackSideAtBottom: playerColor == 'b',
-                      isInteractive: !boardCtrl.reviewMode.value,
-                      nonInteractiveText:
-                          boardCtrl.reviewMode.value ? 'REVIEW MODE' : null,
-                      engineThinking: boardCtrl.isSubmitting.value &&
-                          !boardCtrl.reviewMode.value,
-                    ),
-                  )),
-              Obx(() => boardCtrl.reviewMode.value
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: MoveNavigationControls(
-                        moveHistory: _moveHistory,
-                        onGoBack: () => setState(() {
-                          _moveHistory.goBack();
-                        }),
-                        onGoForward: () => setState(() {
-                          _moveHistory.goForward();
-                        }),
-                        onGoToStart: () => setState(() {
-                          _moveHistory.goToIndex(-1);
-                        }),
-                        onGoToEnd: () => setState(() {
-                          if (_moveHistory.length > 0) {
-                            _moveHistory.goToIndex(_moveHistory.length - 1);
-                          }
-                        }),
-                      ),
-                    )
-                  : const SizedBox.shrink()),
-              // Bottom captured strip shows pieces captured by the player at bottom
-              Obx(() {
-                final bottomPieces = (playerColor == 'b')
-                    ? boardCtrl.blackCaptured.toList()
-                    : boardCtrl.whiteCaptured.toList();
-                final showBlackIcons = (playerColor == 'b') ? false : true;
-                return CapturedPiecesStrip(
-                  pieces: bottomPieces,
-                  showAsBlackPieces: showBlackIcons,
-                );
-              }),
-              Padding(
-                padding: const EdgeInsets.only(top: 6.0),
-                child:
-                    (playerColor == 'b') ? blackLabelWidget : whiteLabelWidget,
-              ),
-            ],
-          );
-        },
+  Widget _reviewToggle(BoardUiController boardCtrl) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6.0),
+      child: Obx(
+        () => Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('Review Mode'),
+            const SizedBox(width: 10),
+            Switch(
+              value: boardCtrl.reviewMode.value,
+              onChanged: (v) {
+                boardCtrl.setReviewMode(v);
+                if (v) {
+                  boardCtrl.goToEnd();
+                }
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _boardOnly(
-      {required String fen,
-      BoardArrow? lastArrow,
-      required Future<void> Function({required ShortMove move}) onMove,
-      required bool blackSideAtBottom,
-      bool isInteractive = true,
-      String? nonInteractiveText,
-      bool engineThinking = false}) {
+  Widget _boardOnly({
+    required BoardUiController boardCtrl,
+    required String fen,
+    BoardArrow? lastArrow,
+    required Future<void> Function({required ShortMove move}) onMove,
+    required bool blackSideAtBottom,
+    bool isInteractive = true,
+    String? nonInteractiveText,
+    bool engineThinking = false,
+    required BuildContext context,
+  }) {
     return Center(
       child: SimpleChessBoard(
         key: ValueKey('board-${blackSideAtBottom ? 'b' : 'w'}'),
@@ -791,6 +355,7 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
         isInteractive: isInteractive,
         nonInteractiveText: nonInteractiveText ?? "",
         showPossibleMoves: true,
+        cellHighlights: {},
         normalMoveIndicatorBuilder: (cellSize) => SizedBox(
           width: cellSize,
           height: cellSize,
@@ -800,7 +365,7 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
               height: cellSize * 0.3,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: MyColors.cyan.withValues(alpha: 0.7),
+                color: MyColors.cyan.withOpacity(0.7),
               ),
               duration: const Duration(milliseconds: 120),
             ),
@@ -827,7 +392,6 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
           ),
         ),
         onPromote: () => handlePromotion(context),
-        cellHighlights: _highlightCells,
         chessBoardColors: ChessBoardColors()
           ..lightSquaresColor = MyColors.lightGray
           ..darkSquaresColor = MyColors.tealGray
@@ -845,7 +409,7 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
         },
         onTap: ({required cellCoordinate}) {},
         highlightLastMoveSquares: true,
-        lastMoveToHighlight: lastArrow ?? _lastMoveArrowCoordinates,
+        lastMoveToHighlight: lastArrow ?? boardCtrl.lastMoveArrow.value,
         showCoordinatesZone: true,
         nonInteractiveTextStyle: const TextStyle(
           color: MyColors.white,
@@ -855,12 +419,333 @@ class _OnlineCustomMoveIndicatorState extends State<OnlineCustomMoveIndicator> {
         ),
         nonInteractiveOverlayColor: MyColors.tealGray,
         onCapturedPiecesChanged: ({
-          required whiteCapturedPieces,
-          required blackCapturedPieces,
+          required List<PieceType> whiteCapturedPieces,
+          required List<PieceType> blackCapturedPieces,
         }) {
           boardCtrl.setCapturedPieces(
             white: whiteCapturedPieces,
             black: blackCapturedPieces,
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Ensure controllers exist
+    final gameCtrl = Get.put(GameController(), tag: gameId);
+    final boardCtrl = Get.put(BoardUiController(), tag: 'board-$gameId');
+    gameCtrl.ensureUiTickStarted();
+    // Do not reset reactive flags here; controllers manage their own defaults
+
+    final gameDoc = games.doc(gameId);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Online Game'),
+        actions: [
+          _reviewToggle(boardCtrl),
+        ],
+      ),
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: gameDoc.snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            if (!gameCtrl.createdMissingGame.value) {
+              gameCtrl.createdMissingGame.value = true;
+              games.doc(gameId).set({
+                'fen': chesslib.Chess.DEFAULT_POSITION,
+                'moves': <String>[],
+                'updatedAt': FieldValue.serverTimestamp(),
+                'players': <String, String>{},
+                'whiteTimeMs': initialTimeMs,
+                'blackTimeMs': initialTimeMs,
+                'lastTurnAt': FieldValue.serverTimestamp(),
+                'status': 'ongoing',
+                'winner': null,
+              });
+            }
+            return const Center(child: CircularProgressIndicator());
+          }
+          final data = snapshot.data!.data()!;
+          final players =
+              Map<String, dynamic>.from(data['players'] ?? const {});
+          final playerColor = players[playerId] as String?;
+          if (playerColor == null &&
+              (!players.values.contains('w') ||
+                  !players.values.contains('b'))) {
+            _ensureAutoJoin(gameDoc, gameCtrl, boardCtrl);
+            return const Center(child: CircularProgressIndicator());
+          }
+          final fen =
+              (data['fen'] as String?) ?? chesslib.Chess.DEFAULT_POSITION;
+          final sideToMoveIsWhite = fen.split(' ')[1] == 'w';
+          final status = (data['status'] as String?) ?? 'ongoing';
+          final winnerColor = data['winner'] as String?;
+          int whiteTimeMs = (data['whiteTimeMs'] as int?) ?? initialTimeMs;
+          int blackTimeMs = (data['blackTimeMs'] as int?) ?? initialTimeMs;
+          final lastTurnTs = data['lastTurnAt'] as Timestamp?;
+          final lastTurnAt = lastTurnTs?.toDate();
+          final moves = List<String>.from(data['moves'] ?? const []);
+          final moveCount = moves.length;
+          final bothSeated =
+              players.values.contains('w') && players.values.contains('b');
+
+          // Sync move history into controller for review
+          boardCtrl.syncMoveHistory(moves);
+
+          // Update game controller reactive state
+          gameCtrl.updateFromSnapshot(
+            newFen: fen,
+            newStatus: status,
+            newWinner: winnerColor,
+            newWhiteTimeMs: whiteTimeMs,
+            newBlackTimeMs: blackTimeMs,
+            newLastTurnAt: lastTurnAt,
+            newMoveCount: moveCount,
+            newBothSeated: bothSeated,
+          );
+
+          final lastMoveStr = data['lastMove'] as String?;
+          BoardArrow? lastArrow;
+          if (lastMoveStr != null && lastMoveStr.length >= 4) {
+            lastArrow = BoardArrow(
+              from: lastMoveStr.substring(0, 2),
+              to: lastMoveStr.substring(2, 4),
+            );
+          }
+
+          if (status == 'ended' &&
+              winnerColor != null &&
+              !gameCtrl.endedDialogShown.value) {
+            gameCtrl.endedDialogShown.value = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showEndDialog(
+                context: context,
+                winnerColor: winnerColor,
+                moves: moves,
+                playerColor: playerColor,
+              );
+            });
+            if (!gameCtrl.historyUploaded.value) {
+              gameCtrl.historyUploaded.value = true;
+              Future.microtask(() async {
+                try {
+                  await GameHistoryUploader.uploadGameHistory(
+                    gameId: gameId,
+                    playerId: playerId,
+                    winnerColor: winnerColor,
+                    history: boardCtrl.moveHistory.history,
+                  );
+                } catch (_) {}
+              });
+            }
+          }
+
+          Future<void> submitMove({required ShortMove move}) async {
+            try {
+              if (playerColor == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('You are spectating. Join to play.')),
+                );
+                return;
+              }
+              boardCtrl.setSubmitting(true);
+              await _tryMoveTransactional(move: move, currentFen: fen);
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Move rejected: $e')),
+              );
+            } finally {
+              boardCtrl.setSubmitting(false);
+            }
+          }
+
+          // Timeout check
+          if (status == 'ongoing' && (bothSeated && moveCount > 0)) {
+            final now = DateTime.now();
+            final elapsedMs = lastTurnAt != null
+                ? now.difference(lastTurnAt).inMilliseconds
+                : 0;
+            final whiteRemain =
+                whiteTimeMs - (sideToMoveIsWhite ? elapsedMs : 0);
+            final blackRemain =
+                blackTimeMs - (!sideToMoveIsWhite ? elapsedMs : 0);
+            final timedOutWhite = sideToMoveIsWhite && whiteRemain <= 0;
+            final timedOutBlack = !sideToMoveIsWhite && blackRemain <= 0;
+            if (timedOutWhite) {
+              _commitTimeoutIfNeeded(gameDoc, 'b', gameCtrl);
+            } else if (timedOutBlack) {
+              _commitTimeoutIfNeeded(gameDoc, 'w', gameCtrl);
+            }
+          }
+
+          // Labels
+          String? whitePlayerId;
+          String? blackPlayerId;
+          for (final entry in players.entries) {
+            if (entry.value == 'w') whitePlayerId = entry.key;
+            if (entry.value == 'b') blackPlayerId = entry.key;
+          }
+          final whiteLabelWidget = Obx(() => Text(
+                'White: ${whitePlayerId ?? 'Waiting'}   ${gameCtrl.whiteLabel.value}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ));
+          final blackLabelWidget = Obx(() => Text(
+                'Black: ${blackPlayerId ?? 'Waiting'}   ${gameCtrl.blackLabel.value}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ));
+
+          if (playerColor == null && bothSeated) {
+            // Spectator view
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (status == 'ended' && winnerColor != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Text(
+                        'Game over. Winner: ${winnerColor == 'w' ? 'White' : 'Black'}'),
+                  ),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8.0),
+                  child: Text('Game is full. You are spectating.'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6.0),
+                  child: blackLabelWidget,
+                ),
+                Obx(() => CapturedPiecesStrip(
+                      pieces: boardCtrl.blackCaptured.toList(),
+                      showAsBlackPieces: false,
+                    )),
+                Obx(() => Container(
+                      decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white)),
+                      child: _boardOnly(
+                        boardCtrl: boardCtrl,
+                        fen: boardCtrl.reviewMode.value
+                            ? boardCtrl.moveHistory.currentFen
+                            : fen,
+                        lastArrow: boardCtrl.reviewMode.value
+                            ? boardCtrl.reviewArrow.value
+                            : lastArrow,
+                        onMove: ({required ShortMove move}) async =>
+                            submitMove(move: move),
+                        blackSideAtBottom: false,
+                        isInteractive: false,
+                        nonInteractiveText: boardCtrl.reviewMode.value
+                            ? 'REVIEW MODE'
+                            : 'SPECTATING',
+                        engineThinking: false,
+                        context: context,
+                      ),
+                    )),
+                Obx(() {
+                  // Depend on reviewIndex to trigger rebuild when navigating/syncing
+                  final _ = boardCtrl.reviewIndex.value;
+                  return boardCtrl.reviewMode.value
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: MoveNavigationControls(
+                            moveHistory: boardCtrl.moveHistory,
+                            onGoBack: () => boardCtrl.goBack(),
+                            onGoForward: () => boardCtrl.goForward(),
+                            onGoToStart: () => boardCtrl.goToStart(),
+                            onGoToEnd: () => boardCtrl.goToEnd(),
+                          ),
+                        )
+                      : const SizedBox.shrink();
+                }),
+                Obx(() => CapturedPiecesStrip(
+                      pieces: boardCtrl.whiteCaptured.toList(),
+                      showAsBlackPieces: true,
+                    )),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6.0),
+                  child: whiteLabelWidget,
+                ),
+              ],
+            );
+          }
+
+          // Player view
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // _reviewToggle(boardCtrl),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6.0),
+                child:
+                    (playerColor == 'b') ? whiteLabelWidget : blackLabelWidget,
+              ),
+              Obx(() {
+                final topPieces = (playerColor == 'b')
+                    ? boardCtrl.whiteCaptured.toList()
+                    : boardCtrl.blackCaptured.toList();
+                final showBlackIcons = (playerColor == 'b') ? true : false;
+                return CapturedPiecesStrip(
+                  pieces: topPieces,
+                  showAsBlackPieces: showBlackIcons,
+                );
+              }),
+              Obx(() => Container(
+                    decoration:
+                        BoxDecoration(border: Border.all(color: Colors.white)),
+                    child: _boardOnly(
+                      boardCtrl: boardCtrl,
+                      fen: boardCtrl.reviewMode.value
+                          ? boardCtrl.moveHistory.currentFen
+                          : fen,
+                      lastArrow: boardCtrl.reviewMode.value
+                          ? boardCtrl.reviewArrow.value
+                          : lastArrow,
+                      onMove: ({required ShortMove move}) async =>
+                          submitMove(move: move),
+                      blackSideAtBottom: playerColor == 'b',
+                      isInteractive: !boardCtrl.reviewMode.value,
+                      nonInteractiveText:
+                          boardCtrl.reviewMode.value ? 'REVIEW MODE' : null,
+                      engineThinking: false,
+                      context: context,
+                    ),
+                  )),
+              Obx(() {
+                final bottomPieces = (playerColor == 'b')
+                    ? boardCtrl.blackCaptured.toList()
+                    : boardCtrl.whiteCaptured.toList();
+                final showBlackIcons = (playerColor == 'w') ? true : false;
+                return CapturedPiecesStrip(
+                  pieces: bottomPieces,
+                  showAsBlackPieces: showBlackIcons,
+                );
+              }),
+              Padding(
+                padding: const EdgeInsets.only(top: 6.0),
+                child:
+                    (playerColor == 'b') ? blackLabelWidget : whiteLabelWidget,
+              ),
+              Obx(() {
+                // Depend on reviewIndex to trigger rebuild when navigating/syncing
+                final _ = boardCtrl.reviewIndex.value;
+                return boardCtrl.reviewMode.value
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: MoveNavigationControls(
+                          moveHistory: boardCtrl.moveHistory,
+                          onGoBack: () => boardCtrl.goBack(),
+                          onGoForward: () => boardCtrl.goForward(),
+                          onGoToStart: () => boardCtrl.goToStart(),
+                          onGoToEnd: () => boardCtrl.goToEnd(),
+                        ),
+                      )
+                    : const SizedBox.shrink();
+              }),
+            ],
           );
         },
       ),

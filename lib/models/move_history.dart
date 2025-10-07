@@ -110,6 +110,15 @@ class MoveHistory {
     _currentIndex = -1;
   }
 
+  /// Replace the entire history with a new list of moves.
+  /// Optionally set the current index; defaults to last move.
+  void replaceAll(List<HistoryMove> newHistory, {int? currentIndex}) {
+    _history
+      ..clear()
+      ..addAll(newHistory);
+    _currentIndex = currentIndex ?? (_history.isNotEmpty ? _history.length - 1 : -1);
+  }
+
   /// Get the last move made
   HistoryMove? get lastMove => _history.isNotEmpty ? _history.last : null;
 

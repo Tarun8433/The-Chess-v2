@@ -57,7 +57,11 @@ class BoardUiController extends GetxController {
     }
   }
 
-  void setReviewMode(bool enabled) => reviewMode.value = enabled;
+  void setReviewMode(bool enabled) {
+    reviewMode.value = enabled;
+    // reflect current index into reactive var to force dependent UI rebuilds
+    reviewIndex.value = moveHistory.currentIndex;
+  }
 
   void setSubmitting(bool submitting) => isSubmitting.value = submitting;
 
@@ -80,10 +84,18 @@ class BoardUiController extends GetxController {
       if (!ok) break;
       mh.addMove(move: m, fen: local.fen);
     }
-    // Assign and adjust index
-    moveHistory.history
-      ..clear()
-      ..addAll(mh.history);
+    // Assign and adjust index using safe replacement
+    final newLen = mh.length;
+    int desiredIndex;
+    if (reviewMode.value) {
+      // Preserve current index while syncing, clamp to available range
+      final existing = moveHistory.currentIndex;
+      desiredIndex = (newLen == 0) ? -1 : existing.clamp(-1, newLen - 1);
+    } else {
+      // Follow live: jump to last move or start
+      desiredIndex = (newLen == 0) ? -1 : newLen - 1;
+    }
+    moveHistory.replaceAll(mh.history, currentIndex: desiredIndex);
     _lastSyncedMoveCount = moves.length;
     if (!reviewMode.value) {
       // follow live
@@ -140,8 +152,9 @@ class BoardUiController extends GetxController {
   }
 
   void goToEnd() {
-    if (moveHistory.length > 0) {
-      moveHistory.goToIndex(moveHistory.length - 1);
+    final len = moveHistory.length;
+    if (len > 0) {
+      moveHistory.goToIndex(len - 1);
       reviewFen.value = moveHistory.currentFen;
       reviewArrow.value = _deriveArrowFromIndex();
       reviewIndex.value = moveHistory.currentIndex;
