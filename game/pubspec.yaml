@@ -54,6 +54,7 @@ dependencies:
   just_audio_windows: ^0.2.2
   get: ^4.6.6
   http: ^1.2.2
+  intl_mobile_field: ^2.1.4
 
 dev_dependencies:
   flutter_test:

@@ -285,6 +285,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.20.2"
+  intl_mobile_field:
+    dependency: "direct main"
+    description:
+      name: intl_mobile_field
+      sha256: "392ab559d1bbfc843fd49447dc0764f3391dd397ce5206c18ff7c9762a55bde5"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.4"
   json_annotation:
     dependency: transitive
     description:

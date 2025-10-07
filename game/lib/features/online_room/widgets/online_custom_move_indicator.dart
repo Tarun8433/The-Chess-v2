@@ -64,6 +64,29 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
     debugPrint('===== End history =====');
   }
 
+  // Compute a cell highlight map that tints the king square when the side to move is in check.
+  Map<String, Color> _computeKingInCheckHighlights(String fen) {
+    try {
+      final c = chesslib.Chess.fromFEN(fen);
+      // chesslib follows chess.js API; in_check indicates side-to-move is in check.
+      final inCheck = c.in_check;
+      if (inCheck != true) return const <String, Color>{};
+
+      final turnColor = c.turn; // chess.Color.WHITE or chess.Color.BLACK
+      for (final sq in chesslib.Chess.SQUARES.keys) {
+        final p = c.get(sq);
+        if (p != null &&
+            p.type == chesslib.PieceType.KING &&
+            p.color == turnColor) {
+          return <String, Color>{sq: Colors.red};
+        }
+      }
+    } catch (_) {
+      // If anything goes wrong, do not highlight.
+    }
+    return const <String, Color>{};
+  }
+
   void _showEndDialog({
     required BuildContext context,
     required String winnerColor,
@@ -355,7 +378,8 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
         isInteractive: isInteractive,
         nonInteractiveText: nonInteractiveText ?? "",
         showPossibleMoves: true,
-        cellHighlights: {},
+        // Highlight the king if the side to move is in check.
+        cellHighlights: _computeKingInCheckHighlights(fen),
         normalMoveIndicatorBuilder: (cellSize) => SizedBox(
           width: cellSize,
           height: cellSize,
@@ -558,7 +582,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
               await _tryMoveTransactional(move: move, currentFen: fen);
             } catch (e) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Move rejected: $e')),
+                SnackBar(content: Text('Move rejected: Is\'s not you turn!')),
               );
             } finally {
               boardCtrl.setSubmitting(false);
