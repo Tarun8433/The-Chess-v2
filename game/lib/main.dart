@@ -5,6 +5,7 @@ import 'features/online_room/widgets/online_custom_move_indicator.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:simple_chess_board_usage/theme/my_colors.dart';
+import 'features/auth/auth_hub.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -130,6 +131,14 @@ class MyHomePage extends StatelessWidget {
             ElevatedButton(
               onPressed: () => _goToOnlineBoard(context),
               child: Text("Play online (Firebase)"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AuthHub()),
+                );
+              },
+              child: Text("Account (Login / Register)"),
             ),
           ],
         ),
