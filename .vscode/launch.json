@@ -5,18 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Flutter-Simple-Chess-Board",
+            "name": "Debug",
             "request": "launch",
             "type": "dart"
         },
         {
-            "name": "Flutter-Simple-Chess-Board (profile mode)",
+            "name": "Profile",
             "request": "launch",
             "type": "dart",
             "flutterMode": "profile"
         },
         {
-            "name": "Flutter-Simple-Chess-Board (release mode)",
+            "name": "Release",
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"

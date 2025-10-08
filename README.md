@@ -384,7 +384,7 @@ SimpleChessBoard(
 
 ## Project's repository
 
-You can find the repository on [Github](https://github.com/loloof64/Flutter-Simple-Chess-Board).
+You can find the repository on [Github](https://github.com/Tarun8433/The-Chess-v2).
 
 ## Credits
 
@@ -393,10 +393,3 @@ You can find the repository on [Github](https://github.com/loloof64/Flutter-Simp
 - Using chess pieces definitions from [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces).
 
 
-## Contributors
-
-<p align="center">
-  <a href="https://github.com/berkaycatak">
-    <img src="https://avatars.githubusercontent.com/u/34205493?v=4" width="80" style="border-radius:50%; margin: 10px;" />
-  </a>
-</p>

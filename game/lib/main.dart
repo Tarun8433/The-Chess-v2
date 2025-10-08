@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'features/game_history/widgets/chess_board_with_history.dart';
 import 'features/offline/widgets/custom_move_indicator.dart';
-import 'features/online_room/widgets/online_custom_move_indicator.dart';
+import 'features/online_room/widgets/game_names_custom_room.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:simple_chess_board_usage/theme/my_colors.dart';
-import 'features/auth/auth_hub.dart';
+import 'features/auth/views/auth_hub.dart';
+import 'features/play_with_frind/views/play_with_friend_hub.dart';
+import 'features/available_games/views/available_games_home.dart';
+import 'features/splash/splash_screen.dart';
+import 'features/auth/models/user_model.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,9 +25,9 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return GetMaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Simple chess board Demo',
+      title: 'Chess Master',
       theme: ThemeData(
         colorScheme: const ColorScheme.dark(
           primary: MyColors.primary,
@@ -37,14 +42,17 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: MyColors.tealGray,
         cardColor: MyColors.cardBackground,
       ),
-      home: const MyHomePage(),
+      home: const SplashScreen(),
     );
   }
 }
 
 class MyHomePage extends StatelessWidget {
+  final UserModel? user;
+
   const MyHomePage({
     super.key,
+    this.user,
   });
 
   // Global time control: per-player total time in milliseconds
@@ -62,9 +70,9 @@ class MyHomePage extends StatelessWidget {
     }));
   }
 
-  Future<void> _goToOnlineBoard(BuildContext context) async {
+  Future<void> _goToOnlineBoard(BuildContext context, String userName) async {
     final gameIdController = TextEditingController(text: 'demo-game');
-    final playerIdController = TextEditingController(text: 'player-a');
+    final playerIdController = TextEditingController(text: userName);
     final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (context) => AlertDialog(
@@ -99,7 +107,7 @@ class MyHomePage extends StatelessWidget {
     );
     if (result == null) return;
     await Navigator.of(context).push(MaterialPageRoute(builder: (context) {
-      return OnlineCustomMoveIndicator(
+      return GameNamesCustomRoom(
         gameId: result['gameId']!,
         playerId: result['playerId']!,
         initialTimeMs: kDefaultTimePerPlayerMs,
@@ -111,7 +119,51 @@ class MyHomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Simple chess board demo"),
+        title: Text(user != null ? "Welcome, ${user!.name}" : "Chess Master"),
+        actions: user != null
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.person),
+                  onPressed: () {
+                    // Show user profile or settings
+                    showDialog(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Profile'),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Name: ${user!.name}'),
+                            const SizedBox(height: 8),
+                            Text('Email: ${user!.emailAddress}'),
+                            const SizedBox(height: 8),
+                            Text('Code: ${user!.customerCode}'),
+                          ],
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  onPressed: () async {
+                    await UserPrefsService.clearUser();
+                    if (context.mounted) {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(builder: (_) => const AuthHub()),
+                      );
+                    }
+                  },
+                ),
+              ]
+            : null,
       ),
       body: Center(
         child: Column(
@@ -129,16 +181,24 @@ class MyHomePage extends StatelessWidget {
               child: Text("See history example"),
             ),
             ElevatedButton(
-              onPressed: () => _goToOnlineBoard(context),
+              onPressed: () => _goToOnlineBoard(context, user!.name),
               child: Text("Play online (Firebase)"),
             ),
             ElevatedButton(
               onPressed: () async {
                 await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AuthHub()),
+                  MaterialPageRoute(builder: (_) => const PlayWithFriendHub()),
                 );
               },
-              child: Text("Account (Login / Register)"),
+              child: Text("Play with friend"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AvailableGamesHome()),
+                );
+              },
+              child: Text("Available games"),
             ),
           ],
         ),

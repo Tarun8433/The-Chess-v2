@@ -501,12 +501,14 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
           if (playerColor == null &&
               (!players.values.contains('w') ||
                   !players.values.contains('b'))) {
+            // Attempt auto-join, but continue to render a friendly waiting UI below.
             _ensureAutoJoin(gameDoc, gameCtrl, boardCtrl);
-            return const Center(child: CircularProgressIndicator());
           }
           final fen =
               (data['fen'] as String?) ?? chesslib.Chess.DEFAULT_POSITION;
-          final sideToMoveIsWhite = fen.split(' ')[1] == 'w';
+          final fenParts = fen.split(' ');
+          final sideToMoveIsWhite =
+              fenParts.length > 1 ? fenParts[1] == 'w' : true;
           final status = (data['status'] as String?) ?? 'ongoing';
           final winnerColor = data['winner'] as String?;
           int whiteTimeMs = (data['whiteTimeMs'] as int?) ?? initialTimeMs;
@@ -623,6 +625,47 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
                 'Black: ${blackPlayerId ?? 'Waiting'}   ${gameCtrl.blackLabel.value}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ));
+
+          // Waiting screen: show until both players have joined
+          if (!bothSeated) {
+            if (playerColor == null) {
+              // Try auto-assign again in case it races with render
+              _ensureAutoJoin(gameDoc, gameCtrl, boardCtrl);
+            }
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8.0),
+                  child: Text(
+                    'Waiting for opponent to join…',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6.0),
+                  child: whiteLabelWidget,
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: blackLabelWidget,
+                ),
+                const SizedBox(height: 8),
+                const CircularProgressIndicator(),
+                const SizedBox(height: 10),
+                Text(
+                  'Room ID: $gameId',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Share the Room ID with your friend to join.',
+                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                ),
+              ],
+            );
+          }
 
           if (playerColor == null && bothSeated) {
             // Spectator view

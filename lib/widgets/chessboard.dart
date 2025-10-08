@@ -761,6 +761,7 @@ class _ChessboardState extends State<_Chessboard> {
         "${String.fromCharCode('1'.codeUnitAt(0) + rank)}";
 
     // Handle possible moves display on tap
+    // Only allow selection when it's human turn and board is interactive
     if (widget.showPossibleMoves && _isHumanTurn() && widget.isInteractive) {
       // Check if tapping on a possible move square (to make a move) FIRST
       if (_possibleMoves.contains(cellCoordinate) && _tapStart != null) {
@@ -768,17 +769,19 @@ class _ChessboardState extends State<_Chessboard> {
         final from = coordinatesToSquareName(_tapStart!.$1, _tapStart!.$2);
         final move = ShortMove(from: from, to: cellCoordinate);
 
-        if (isPromoting(widget.fen, move)) {
-          // Handle promotion
-          final selectedPiece = await widget.onPromote();
-          if (selectedPiece != null) {
-            widget.onPromotionCommited(
-              moveDone: move,
-              pieceType: selectedPiece,
-            );
+        if (_isHumanTurn()) {
+          if (isPromoting(widget.fen, move)) {
+            // Handle promotion
+            final selectedPiece = await widget.onPromote();
+            if (selectedPiece != null) {
+              widget.onPromotionCommited(
+                moveDone: move,
+                pieceType: selectedPiece,
+              );
+            }
+          } else {
+            widget.processMove(move);
           }
-        } else {
-          widget.processMove(move);
         }
 
         // Clear selection after move
