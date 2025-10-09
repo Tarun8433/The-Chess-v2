@@ -180,6 +180,42 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
         'blackTimeMs': blackTimeMs,
         'moves': moves,
       });
+
+      // Auto end the game on checkmate or stalemate (and insufficient material)
+      try {
+        final isMate = chess.in_checkmate == true;
+        final isStalemate = chess.in_stalemate == true;
+        final isInsufficient = chess.insufficient_material == true;
+        if (isMate) {
+          // In checkmate, side to move has no legal moves => loser
+          final turnColor =
+              chess.turn; // chess.Color.WHITE or chess.Color.BLACK
+          final winner = turnColor == chesslib.Color.WHITE ? 'b' : 'w';
+          tx.update(gameRef, {
+            'status': 'ended',
+            'winner': winner,
+            'endReason': 'checkmate',
+            'endedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else if (isStalemate) {
+          tx.update(gameRef, {
+            'status': 'ended',
+            'winner': null,
+            'endReason': 'stalemate',
+            'endedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else if (isInsufficient) {
+          tx.update(gameRef, {
+            'status': 'ended',
+            'winner': null,
+            'endReason': 'insufficient_material',
+            'endedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (_) {}
     });
   }
 
@@ -771,11 +807,13 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8.0),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: Colors.orange.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.orange.withOpacity(0.5)),
+                        border:
+                            Border.all(color: Colors.orange.withOpacity(0.5)),
                       ),
                       child: Text(
                         gameCtrl.joinError.value,
