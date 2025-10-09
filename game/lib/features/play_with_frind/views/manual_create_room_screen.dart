@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:simple_chess_board_usage/features/online_room/widgets/online_custom_move_indicator.dart';
 import 'package:simple_chess_board_usage/theme/my_colors.dart';
 import '../../online_room/widgets/game_names_custom_room.dart';
 
@@ -42,7 +43,7 @@ class _ManualCreateRoomScreenState extends State<ManualCreateRoomScreen> {
                 if (gameId.isEmpty || playerId.isEmpty) return;
                 await Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => GameNamesCustomRoom(
+                    builder: (_) => OnlineCustomMoveIndicator(
                       gameId: gameId,
                       playerId: playerId,
                       initialTimeMs: kDefaultTimePerPlayerMs,

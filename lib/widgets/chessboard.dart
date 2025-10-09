@@ -2,8 +2,9 @@ library;
 
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:chess/chess.dart' as chess;
-import 'package:just_audio/just_audio.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:simple_chess_board/models/piece.dart';
 import 'package:simple_chess_board/utils.dart';
 import 'package:simple_chess_board/widgets/chess_vectors_definitions.dart';
@@ -476,11 +477,14 @@ class _ChessboardState extends State<_Chessboard> {
       _audioPlayers[SoundType.move] = AudioPlayer();
       _audioPlayers[SoundType.capture] = AudioPlayer();
 
-      // Pre-load sounds
-      await _audioPlayers[SoundType.move]!
-          .setAsset('packages/simple_chess_board/sounds/move-self.mp3');
+      // Optimize for short sound effects
+      await _audioPlayers[SoundType.move]!.setPlayerMode(PlayerMode.mediaPlayer);
       await _audioPlayers[SoundType.capture]!
-          .setAsset('packages/simple_chess_board/sounds/capture.mp3');
+          .setPlayerMode(PlayerMode.mediaPlayer);
+      await _audioPlayers[SoundType.move]!.setReleaseMode(ReleaseMode.stop);
+      await _audioPlayers[SoundType.capture]!.setReleaseMode(ReleaseMode.stop);
+
+      // No pre-load: we'll pass AssetSource on each play call
     } catch (e) {
       debugPrint('Sound initialization error: $e');
     }
@@ -528,8 +532,13 @@ class _ChessboardState extends State<_Chessboard> {
     try {
       final player = _audioPlayers[soundType];
       if (player != null) {
-        await player.seek(Duration.zero);
-        await player.play();
+        await player.stop();
+        final assetKey = soundType == SoundType.capture
+            ? 'packages/simple_chess_board/assets/sounds/capture.mp3'
+            : 'packages/simple_chess_board/assets/sounds/move-self.mp3';
+        final data = await rootBundle.load(assetKey);
+        final bytes = data.buffer.asUint8List();
+        await player.play(BytesSource(bytes));
       }
     } catch (e) {
       debugPrint('Sound error: $e');

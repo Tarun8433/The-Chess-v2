@@ -5,38 +5,38 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug",
+            "name": "Flutter-Simple-Chess-Board-main",
             "request": "launch",
             "type": "dart"
         },
         {
-            "name": "Profile",
+            "name": "Flutter-Simple-Chess-Board-main (profile mode)",
             "request": "launch",
             "type": "dart",
             "flutterMode": "profile"
         },
         {
-            "name": "Release",
+            "name": "Flutter-Simple-Chess-Board-main (release mode)",
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"
         },
         {
-            "name": "example",
-            "cwd": "example",
+            "name": "game",
+            "cwd": "game",
             "request": "launch",
             "type": "dart"
         },
         {
-            "name": "example (profile mode)",
-            "cwd": "example",
+            "name": "game (profile mode)",
+            "cwd": "game",
             "request": "launch",
             "type": "dart",
             "flutterMode": "profile"
         },
         {
-            "name": "example (release mode)",
-            "cwd": "example",
+            "name": "game (release mode)",
+            "cwd": "game",
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"

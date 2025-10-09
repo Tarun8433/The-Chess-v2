@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:simple_chess_board_usage/features/online_room/widgets/online_custom_move_indicator.dart';
 import 'features/game_history/widgets/chess_board_with_history.dart';
 import 'features/offline/widgets/custom_move_indicator.dart';
-import 'features/online_room/widgets/game_names_custom_room.dart';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:simple_chess_board_usage/theme/my_colors.dart';
@@ -107,7 +108,7 @@ class MyHomePage extends StatelessWidget {
     );
     if (result == null) return;
     await Navigator.of(context).push(MaterialPageRoute(builder: (context) {
-      return GameNamesCustomRoom(
+      return OnlineCustomMoveIndicator(
         gameId: result['gameId']!,
         playerId: result['playerId']!,
         initialTimeMs: kDefaultTimePerPlayerMs,

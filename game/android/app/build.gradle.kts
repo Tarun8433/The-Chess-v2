@@ -31,6 +31,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Only include English resources to reduce size
+        resConfigs("en")
     }
 
     buildTypes {
@@ -38,6 +40,26 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Enable code and resource shrinking for smaller APKs
+            isMinifyEnabled = true
+            isShrinkResources = true
+
+            // Use optimized default proguard config and app-specific rules
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                file("proguard-rules.pro"),
+            )
+        }
+    }
+
+    // Generate per-ABI APKs instead of one large universal APK
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            // Enable universal APK to ensure all ABIs are packaged
+            isUniversalApk = true
         }
     }
 }

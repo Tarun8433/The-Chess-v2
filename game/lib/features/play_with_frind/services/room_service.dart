@@ -21,6 +21,12 @@ class RoomService {
       'lastTurnAt': FieldValue.serverTimestamp(),
       'status': 'ongoing',
       'winner': null,
+      // Offers and presence tracking
+      'drawOfferedBy': null, // 'w' | 'b' | null
+      'drawOfferAt': null, // Timestamp | null
+      'lastSeen': <String, dynamic>{}, // {playerId: Timestamp}
+      // End reason of the game when ended
+      'endReason': null, // e.g., 'timeout', 'resign', 'draw_agreed', etc.
     });
     return doc;
   }

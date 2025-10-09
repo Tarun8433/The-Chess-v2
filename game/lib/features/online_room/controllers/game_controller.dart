@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:get/get.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class GameController extends GetxController {
   // Reactive game state
@@ -26,12 +27,17 @@ class GameController extends GetxController {
   final blackLabel = ''.obs;
 
   Timer? _uiTick;
+  // Presence heartbeat configuration
+  DocumentReference<Map<String, dynamic>>? _presenceGameRef;
+  String? _presencePlayerId;
+  DateTime? _lastHeartbeatAt;
 
   void startUiTick() {
     _uiTick?.cancel();
     _uiTick = Timer.periodic(const Duration(milliseconds: 250), (_) {
       // Trigger recomputation of labels only
       _recomputeLabels();
+      _maybeHeartbeat();
     });
   }
 
@@ -44,6 +50,14 @@ class GameController extends GetxController {
     if (_uiTick == null) {
       startUiTick();
     }
+  }
+
+  void configurePresence(
+    DocumentReference<Map<String, dynamic>> gameRef,
+    String playerId,
+  ) {
+    _presenceGameRef = gameRef;
+    _presencePlayerId = playerId;
   }
 
   void updateFromSnapshot({
@@ -86,10 +100,30 @@ class GameController extends GetxController {
     final elapsedMs = (ongoing && clocksActive.value)
         ? now.difference(ltAt).inMilliseconds
         : 0;
-    final whiteRemain = whiteTimeMs.value - (ongoing && sideWhite ? elapsedMs : 0);
-    final blackRemain = blackTimeMs.value - (ongoing && !sideWhite ? elapsedMs : 0);
+    final whiteRemain =
+        whiteTimeMs.value - (ongoing && sideWhite ? elapsedMs : 0);
+    final blackRemain =
+        blackTimeMs.value - (ongoing && !sideWhite ? elapsedMs : 0);
     whiteLabel.value = _formatMs(whiteRemain);
     blackLabel.value = _formatMs(blackRemain);
+  }
+
+  void _maybeHeartbeat() async {
+    try {
+      final ref = _presenceGameRef;
+      final pid = _presencePlayerId;
+      if (ref == null || pid == null) return;
+      final now = DateTime.now();
+      final last = _lastHeartbeatAt;
+      if (last != null && now.difference(last).inSeconds < 10) return;
+      _lastHeartbeatAt = now;
+      await ref.update({
+        'lastSeen.$pid': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {
+      // ignore heartbeat failures
+    }
   }
 
   @override

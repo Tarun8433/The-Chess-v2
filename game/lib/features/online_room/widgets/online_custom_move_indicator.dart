@@ -8,6 +8,7 @@ import 'package:get/get.dart';
 import '../../services/game_history_uploader.dart';
 import '../controllers/game_controller.dart';
 import '../controllers/board_ui_controller.dart';
+import 'endgame_dialog_manager.dart';
 
 class OnlineCustomMoveIndicator extends StatelessWidget {
   final String gameId;
@@ -87,75 +88,6 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
     return const <String, Color>{};
   }
 
-  void _showEndDialog({
-    required BuildContext context,
-    required String winnerColor,
-    required List<String> moves,
-    String? playerColor,
-  }) {
-    final youWon = playerColor != null && playerColor == winnerColor;
-    final youLost = playerColor != null && playerColor != winnerColor;
-    final title = youWon
-        ? 'You won on time'
-        : youLost
-            ? 'You lost on time'
-            : 'Game ended';
-    final winnerText = winnerColor == 'w' ? 'White' : 'Black';
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return WillPopScope(
-          onWillPop: () async {
-            _printMoves(moves);
-            return false;
-          },
-          child: AlertDialog(
-            title: Text(title),
-            content: SizedBox(
-              width: 400,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!youWon && !youLost)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8.0),
-                      child: Text('Winner: $winnerText'),
-                    ),
-                  const Text('Game history:'),
-                  const SizedBox(height: 6),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 240),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: moves.length,
-                      itemBuilder: (context, index) {
-                        final move = moves[index];
-                        final moveNumber = index + 1;
-                        return Text('$moveNumber. $move');
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  _printMoves(moves);
-                  Navigator.of(context).pop();
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                },
-                child: const Text('Go Home'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _tryMoveTransactional({
     required ShortMove move,
     required String currentFen,
@@ -210,6 +142,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
           tx.update(gameRef, {
             'status': 'ended',
             'winner': 'b',
+            'endReason': 'timeout',
             'whiteTimeMs': 0,
             'blackTimeMs': blackTimeMs,
             'endedAt': FieldValue.serverTimestamp(),
@@ -223,6 +156,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
           tx.update(gameRef, {
             'status': 'ended',
             'winner': 'w',
+            'endReason': 'timeout',
             'whiteTimeMs': whiteTimeMs,
             'blackTimeMs': 0,
             'endedAt': FieldValue.serverTimestamp(),
@@ -319,6 +253,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
         tx.update(gameRef, {
           'status': 'ended',
           'winner': winnerColor,
+          'endReason': 'timeout',
           'whiteTimeMs': sideToMoveIsWhite ? 0 : whiteTimeMs,
           'blackTimeMs': sideToMoveIsWhite ? blackTimeMs : 0,
           'endedAt': FieldValue.serverTimestamp(),
@@ -378,6 +313,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
         isInteractive: isInteractive,
         nonInteractiveText: nonInteractiveText ?? "",
         showPossibleMoves: true,
+        playSounds: true,
         // Highlight the king if the side to move is in check.
         cellHighlights: _computeKingInCheckHighlights(fen),
         normalMoveIndicatorBuilder: (cellSize) => SizedBox(
@@ -431,6 +367,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
           moveDone.promotion = pieceType;
           await onMove(move: moveDone);
         },
+
         onTap: ({required cellCoordinate}) {},
         highlightLastMoveSquares: true,
         lastMoveToHighlight: lastArrow ?? boardCtrl.lastMoveArrow.value,
@@ -461,9 +398,11 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
     final gameCtrl = Get.put(GameController(), tag: gameId);
     final boardCtrl = Get.put(BoardUiController(), tag: 'board-$gameId');
     gameCtrl.ensureUiTickStarted();
+    // Configure presence heartbeat
+    final gameDoc = games.doc(gameId);
+    gameCtrl.configurePresence(gameDoc, playerId);
     // Do not reset reactive flags here; controllers manage their own defaults
 
-    final gameDoc = games.doc(gameId);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Online Game'),
@@ -490,6 +429,10 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
                 'lastTurnAt': FieldValue.serverTimestamp(),
                 'status': 'ongoing',
                 'winner': null,
+                'drawOfferedBy': null,
+                'drawOfferAt': null,
+                'lastSeen': <String, dynamic>{},
+                'endReason': null,
               });
             }
             return const Center(child: CircularProgressIndicator());
@@ -511,6 +454,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
               fenParts.length > 1 ? fenParts[1] == 'w' : true;
           final status = (data['status'] as String?) ?? 'ongoing';
           final winnerColor = data['winner'] as String?;
+          final endReason = data['endReason'] as String?;
           int whiteTimeMs = (data['whiteTimeMs'] as int?) ?? initialTimeMs;
           int blackTimeMs = (data['blackTimeMs'] as int?) ?? initialTimeMs;
           final lastTurnTs = data['lastTurnAt'] as Timestamp?;
@@ -544,17 +488,102 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
             );
           }
 
-          if (status == 'ended' &&
-              winnerColor != null &&
-              !gameCtrl.endedDialogShown.value) {
+          if (status == 'ended' && !gameCtrl.endedDialogShown.value) {
             gameCtrl.endedDialogShown.value = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              _showEndDialog(
-                context: context,
-                winnerColor: winnerColor,
-                moves: moves,
-                playerColor: playerColor,
-              );
+              bool isCheckmate = false;
+              bool isStalemate = false;
+              bool isInsufficient = false;
+              bool isThreefold = false;
+              bool isFiftyMove = false;
+              try {
+                final c = chesslib.Chess.fromFEN(fen);
+                isCheckmate = (c.in_checkmate == true);
+                isStalemate = (c.in_stalemate == true);
+                isInsufficient = (c.insufficient_material == true);
+                final halfMoves = c.half_moves ?? 0;
+                isFiftyMove = halfMoves >= 100; // 100 half-moves => 50 moves
+                try {
+                  isThreefold = (c.in_threefold_repetition as bool?) == true;
+                } catch (_) {
+                  isThreefold = false;
+                }
+              } catch (_) {}
+
+              if (isCheckmate) {
+                final inferredWinner = sideToMoveIsWhite ? 'b' : 'w';
+                EndgameDialogManager.showCheckmate(
+                  context: context,
+                  moves: moves,
+                  winnerColor: inferredWinner,
+                  playerColor: playerColor,
+                );
+              } else if (isStalemate) {
+                EndgameDialogManager.showStalemate(
+                  context: context,
+                  moves: moves,
+                  playerColor: playerColor,
+                );
+              } else if (isInsufficient) {
+                EndgameDialogManager.showInsufficientMaterial(
+                  context: context,
+                  moves: moves,
+                  playerColor: playerColor,
+                );
+              }
+              // else if (isThreefold) {
+              //   EndgameDialogManager.showThreefoldRepetition(
+              //     context: context,
+              //     moves: moves,
+              //     playerColor: playerColor,
+              //   );
+              // }
+
+              //  else if (isFiftyMove) {
+              //   EndgameDialogManager.showFiftyMoveRule(
+              //     context: context,
+              //     moves: moves,
+              //     playerColor: playerColor,
+              //   );
+              //  }
+              else if (winnerColor != null) {
+                // Map specific end reasons to dialogs
+                if (endReason == 'timeout') {
+                  EndgameDialogManager.showTimeout(
+                    context: context,
+                    moves: moves,
+                    winnerColor: winnerColor,
+                    playerColor: playerColor,
+                  );
+                } else if (endReason == 'resign') {
+                  EndgameDialogManager.showResignation(
+                    context: context,
+                    moves: moves,
+                    winnerColor: winnerColor,
+                    playerColor: playerColor,
+                  );
+                } else if (endReason == 'disconnect_loss') {
+                  EndgameDialogManager.showAutomaticLossDisconnection(
+                    context: context,
+                    moves: moves,
+                    winnerColor: winnerColor,
+                    playerColor: playerColor,
+                  );
+                } else {
+                  // Fallback to timeout-style summary
+                  EndgameDialogManager.showTimeout(
+                    context: context,
+                    moves: moves,
+                    winnerColor: winnerColor,
+                    playerColor: playerColor,
+                  );
+                }
+              } else {
+                EndgameDialogManager.showGameAborted(
+                  context: context,
+                  moves: moves,
+                );
+              }
             });
             if (!gameCtrl.historyUploaded.value) {
               gameCtrl.historyUploaded.value = true;
@@ -563,7 +592,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
                   await GameHistoryUploader.uploadGameHistory(
                     gameId: gameId,
                     playerId: playerId,
-                    winnerColor: winnerColor,
+                    winnerColor: winnerColor ?? 'd',
                     history: boardCtrl.moveHistory.history,
                   );
                 } catch (_) {}
@@ -589,6 +618,55 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
             } finally {
               boardCtrl.setSubmitting(false);
             }
+          }
+
+          Future<void> _offerDraw() async {
+            try {
+              await gameDoc.update({
+                'drawOfferedBy': playerColor,
+                'drawOfferAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Draw offer sent.')),
+              );
+            } catch (_) {}
+          }
+
+          Future<void> _acceptDraw() async {
+            try {
+              await gameDoc.update({
+                'status': 'ended',
+                'winner': null,
+                'endReason': 'draw_agreed',
+                'endedAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+            } catch (_) {}
+          }
+
+          Future<void> _declineDraw() async {
+            try {
+              await gameDoc.update({
+                'drawOfferedBy': null,
+                'drawOfferAt': null,
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+            } catch (_) {}
+          }
+
+          Future<void> _resign() async {
+            try {
+              if (playerColor == null) return;
+              final winner = playerColor == 'w' ? 'b' : 'w';
+              await gameDoc.update({
+                'status': 'ended',
+                'winner': winner,
+                'endReason': 'resign',
+                'endedAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+            } catch (_) {}
           }
 
           // Timeout check
@@ -750,6 +828,59 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
                 child:
                     (playerColor == 'b') ? whiteLabelWidget : blackLabelWidget,
               ),
+              // Actions row: resign and draw offer
+              if (status == 'ongoing' && playerColor != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _resign,
+                        icon: const Icon(Icons.flag),
+                        label: const Text('Resign'),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        onPressed: _offerDraw,
+                        icon: const Icon(Icons.handshake),
+                        label: const Text('Offer Draw'),
+                      ),
+                    ],
+                  ),
+                ),
+              // Draw offer banner
+              Builder(builder: (_) {
+                final drawOfferedBy = data['drawOfferedBy'] as String?;
+                if (status == 'ongoing' && drawOfferedBy != null) {
+                  final youOffered = drawOfferedBy == playerColor;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          youOffered
+                              ? 'You offered a draw.'
+                              : 'Opponent offered a draw.',
+                        ),
+                        const SizedBox(width: 10),
+                        if (!youOffered)
+                          ElevatedButton(
+                            onPressed: _acceptDraw,
+                            child: const Text('Accept'),
+                          ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: _declineDraw,
+                          child: const Text('Decline'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              }),
               Obx(() {
                 final topPieces = (playerColor == 'b')
                     ? boardCtrl.whiteCaptured.toList()

@@ -86,46 +86,31 @@ class _AvailableGamesHomeState extends State<AvailableGamesHome> {
             'Playerid': '',
           })}");
 
-      // Check status code and response
-      if (gameRoomResponse.statusCode == '404' ||
-          gameRoomResponse.response == null ||
-          gameRoomResponse.response!.isEmpty) {
-        _createAndEnter();
+      // Decide based on response content
+      final hasResponse = gameRoomResponse.response != null &&
+          gameRoomResponse.response!.isNotEmpty;
+      if (!hasResponse) {
+        // No room info returned; create one and enter
+        await _createAndEnter(gameId);
         return;
       }
-
-    
-
-      // Success - show game room details
       final firstRoom = gameRoomResponse.response!.first;
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Game Room Found'),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Status: Success'),
-                Text('Message: ${firstRoom.msg ?? 'Game room available'}'),
-                const SizedBox(height: 12),
-                const Text('Room Details:',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Text('Room ID: ${firstRoom.roomId ?? 'N/A'}'),
-                Text('Game ID: ${firstRoom.gameId ?? 'N/A'}'),
-                Text('Player ID: ${firstRoom.playerId ?? 'N/A'}'),
-              ],
+      final msg = (firstRoom.msg ?? '').trim();
+      if (msg == "RoomId does not Exist") {
+        await _createAndEnter(gameId);
+      } else {
+        log("Room Created Successfully: ${_playerIdCtrl.text.trim()}  -- ${firstRoom.roomId!}");
+        // Room exists -> navigate to it
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => OnlineCustomMoveIndicator(
+              gameId: firstRoom.roomId!,
+              playerId: _playerIdCtrl.text.trim(),
+              initialTimeMs: kDefaultTimePerPlayerMs,
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
+        );
+      }
     } catch (e) {
       await showDialog(
         context: context,
@@ -156,7 +141,7 @@ class _AvailableGamesHomeState extends State<AvailableGamesHome> {
     }
   }
 
-  Future<void> _createAndEnter() async {
+  Future<void> _createAndEnter(String gameIdFromBackend) async {
     setState(() => _creating = true);
     try {
       final doc = await RoomService.createAutoRoom(
@@ -165,17 +150,96 @@ class _AvailableGamesHomeState extends State<AvailableGamesHome> {
 
       log("Auto Gen Room Id: ${doc.id}");
       if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => OnlineCustomMoveIndicator(
-            gameId: doc.id,
-            playerId: _playerIdCtrl.text.trim(),
-            initialTimeMs: kDefaultTimePerPlayerMs,
-          ),
-        ),
-      );
+      await _createRoomInBackend(context, doc.id, gameIdFromBackend);
     } finally {
       if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  Future<void> _createRoomInBackend(
+      BuildContext context, String roomId, String gameIdFromBackend) async {
+    if (roomId.isEmpty) {
+      await showDialog(
+        context: context,
+        builder: (_) => const AlertDialog(
+          title: Text('Invalid Game ID'),
+          content: Text('Game ID is empty.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final uri = Uri.parse(
+          'https://chessgame.signaturesoftware.co.in/api/CS/GameRoomSetAdd');
+      final resp = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'Roomid': roomId,
+          'Gameid': gameIdFromBackend,
+          'Playerid': _playerIdCtrl.text.trim(),
+        }),
+      );
+
+      // Parse response using model
+      final gameRoomResponse = GameRoomResponse.fromJson(
+        jsonDecode(resp.body) as Map<String, dynamic>,
+      );
+
+      log("createRoomInBackend==> ${resp.body} ---- ${jsonEncode({
+            'Roomid': roomId,
+            'Gameid': gameIdFromBackend,
+            'Playerid': _playerIdCtrl.text.trim(),
+          })}");
+
+      final hasResponse = gameRoomResponse.response != null &&
+          gameRoomResponse.response!.isNotEmpty;
+      final successMsg = hasResponse
+          ? (gameRoomResponse.response!.first.msg ?? '').trim()
+          : '';
+      final success = (gameRoomResponse.status == true) ||
+          successMsg == "Room Added Successfully";
+      if (success) {
+        log("Room Created Successfully: $roomId");
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => OnlineCustomMoveIndicator(
+              gameId: roomId,
+              playerId: _playerIdCtrl.text.trim(),
+              initialTimeMs: kDefaultTimePerPlayerMs,
+            ),
+          ),
+        );
+      } else {
+        await showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+                  title: const Text('Room Creation Failed'),
+                  content: Text(
+                      'Backend did not confirm room creation. Message: ${hasResponse ? (gameRoomResponse.response!.first.msg ?? '') : (gameRoomResponse.message ?? 'Unknown')}'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                ));
+      }
+    } catch (e) {
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Error'),
+          content: Text('Failed to connect to server: $e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     }
   }
 
