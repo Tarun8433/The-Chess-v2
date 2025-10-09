@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:chess/chess.dart' as chess;
 import 'package:simple_chess_board/simple_chess_board.dart';
 import 'package:simple_chess_board_usage/theme/my_colors.dart';
+import 'package:get/get.dart';
+import '../../settings/settings_controller.dart';
 
 class ChessBoardWithHistory extends StatefulWidget {
   const ChessBoardWithHistory({super.key});
@@ -107,9 +109,21 @@ class _ChessBoardWithHistoryState extends State<ChessBoardWithHistory> {
 
   @override
   Widget build(BuildContext context) {
+    final settings = Get.put(SettingsController());
     return Scaffold(
       appBar: AppBar(
         title: const Text('Chess Board with History'),
+        actions: [
+          Obx(() => Row(
+                children: [
+                  const Text('Sound', style: TextStyle(fontSize: 12)),
+                  Switch(
+                    value: settings.soundEnabled.value,
+                    onChanged: (v) => settings.setSoundEnabled(v),
+                  ),
+                ],
+              )),
+        ],
       ),
       body: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -149,6 +163,7 @@ class _ChessBoardWithHistoryState extends State<ChessBoardWithHistory> {
                             blackPlayerType: PlayerType.human,
                             onMove: ({required ShortMove move}) =>
                                 _onMove(move),
+                            playSounds: settings.soundEnabled.value,
                             onPromote: () async {
                               // Simple promotion to queen for demo
                               return PieceType.queen;

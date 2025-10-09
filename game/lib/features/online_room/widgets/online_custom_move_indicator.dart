@@ -9,6 +9,7 @@ import '../../services/game_history_uploader.dart';
 import '../controllers/game_controller.dart';
 import '../controllers/board_ui_controller.dart';
 import 'endgame_dialog_manager.dart';
+import '../../settings/settings_controller.dart';
 
 class OnlineCustomMoveIndicator extends StatelessWidget {
   final String gameId;
@@ -57,13 +58,13 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
     );
   }
 
-  void _printMoves(List<String> mvs) {
-    debugPrint('===== Game history (${mvs.length} moves) =====');
-    for (int i = 0; i < mvs.length; i++) {
-      debugPrint('${i + 1}. ${mvs[i]}');
-    }
-    debugPrint('===== End history =====');
-  }
+  // void _printMoves(List<String> mvs) {
+  //   debugPrint('===== Game history (${mvs.length} moves) =====');
+  //   for (int i = 0; i < mvs.length; i++) {
+  //     debugPrint('${i + 1}. ${mvs[i]}');
+  //   }
+  //   debugPrint('===== End history =====');
+  // }
 
   // Compute a cell highlight map that tints the king square when the side to move is in check.
   Map<String, Color> _computeKingInCheckHighlights(String fen) {
@@ -194,7 +195,11 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
         }
         final data = snap.data()!;
         final players = Map<String, dynamic>.from(data['players'] ?? const {});
-        if (players.containsKey(playerId)) return;
+        if (players.containsKey(playerId)) {
+          // Duplicate playerId already seated; mark and exit.
+          gameCtrl.joinError.value = 'Player ID already present in room';
+          return;
+        }
         final whiteTaken = players.values.contains('w');
         final blackTaken = players.values.contains('b');
         String? assignColor;
@@ -214,8 +219,16 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
         // Default orientation based on assignment
         boardCtrl.blackAtBottom.value = assignColor == 'b';
       });
-    } catch (_) {
-      // Ignore
+    } catch (e) {
+      // Record error and allow one retry after brief delay
+      gameCtrl.joinError.value = 'Join failed: $e';
+      final retries = (gameCtrl.joinRetries.value) + 1;
+      gameCtrl.joinRetries.value = retries;
+      if (retries <= 2) {
+        await Future.delayed(const Duration(milliseconds: 600));
+        gameCtrl.joinAttempted.value = false;
+        await _ensureAutoJoin(gameRef, gameCtrl, boardCtrl);
+      }
     }
   }
 
@@ -300,6 +313,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
     String? nonInteractiveText,
     bool engineThinking = false,
     required BuildContext context,
+    required bool playSounds,
   }) {
     return Center(
       child: SimpleChessBoard(
@@ -313,7 +327,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
         isInteractive: isInteractive,
         nonInteractiveText: nonInteractiveText ?? "",
         showPossibleMoves: true,
-        playSounds: true,
+        playSounds: playSounds,
         // Highlight the king if the side to move is in check.
         cellHighlights: _computeKingInCheckHighlights(fen),
         normalMoveIndicatorBuilder: (cellSize) => SizedBox(
@@ -397,6 +411,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
     // Ensure controllers exist
     final gameCtrl = Get.put(GameController(), tag: gameId);
     final boardCtrl = Get.put(BoardUiController(), tag: 'board-$gameId');
+    final settings = Get.put(SettingsController());
     gameCtrl.ensureUiTickStarted();
     // Configure presence heartbeat
     final gameDoc = games.doc(gameId);
@@ -408,6 +423,15 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
         title: const Text('Online Game'),
         actions: [
           _reviewToggle(boardCtrl),
+          Obx(() => Row(
+                children: [
+                  const Text('Sound', style: TextStyle(fontSize: 12)),
+                  Switch(
+                    value: settings.soundEnabled.value,
+                    onChanged: (v) => settings.setSoundEnabled(v),
+                  ),
+                ],
+              )),
         ],
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -494,20 +518,20 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
               bool isCheckmate = false;
               bool isStalemate = false;
               bool isInsufficient = false;
-              bool isThreefold = false;
-              bool isFiftyMove = false;
+              // bool isThreefold = false;
+              // bool isFiftyMove = false;
               try {
                 final c = chesslib.Chess.fromFEN(fen);
                 isCheckmate = (c.in_checkmate == true);
                 isStalemate = (c.in_stalemate == true);
                 isInsufficient = (c.insufficient_material == true);
-                final halfMoves = c.half_moves ?? 0;
-                isFiftyMove = halfMoves >= 100; // 100 half-moves => 50 moves
-                try {
-                  isThreefold = (c.in_threefold_repetition as bool?) == true;
-                } catch (_) {
-                  isThreefold = false;
-                }
+                //final halfMoves = c.half_moves ?? 0;
+                // isFiftyMove = halfMoves >= 100; // 100 half-moves => 50 moves
+                // try {
+                //   isThreefold = (c.in_threefold_repetition as bool?) == true;
+                // } catch (_) {
+                //   isThreefold = false;
+                // }
               } catch (_) {}
 
               if (isCheckmate) {
@@ -658,6 +682,28 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
           Future<void> _resign() async {
             try {
               if (playerColor == null) return;
+              final shouldResign = await showDialog<bool>(
+                context: context,
+                builder: (ctx) {
+                  return AlertDialog(
+                    title: const Text('Confirm Resignation'),
+                    content: const Text(
+                        'Are you sure you want to resign? This will end the game and your opponent will be declared the winner.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        icon: const Icon(Icons.flag),
+                        label: const Text('Resign'),
+                      ),
+                    ],
+                  );
+                },
+              );
+              if (shouldResign != true) return;
               final winner = playerColor == 'w' ? 'b' : 'w';
               await gameDoc.update({
                 'status': 'ended',
@@ -721,6 +767,22 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ),
+                if (gameCtrl.joinError.value.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.orange.withOpacity(0.5)),
+                      ),
+                      child: Text(
+                        gameCtrl.joinError.value,
+                        style: const TextStyle(color: Colors.orange),
+                      ),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6.0),
                   child: whiteLabelWidget,
@@ -739,6 +801,11 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
                 const SizedBox(height: 6),
                 const Text(
                   'Share the Room ID with your friend to join.',
+                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Tip: Player IDs must be unique in a room.',
                   style: TextStyle(fontSize: 12, color: Colors.white70),
                 ),
               ],
@@ -788,6 +855,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
                             : 'SPECTATING',
                         engineThinking: false,
                         context: context,
+                        playSounds: settings.soundEnabled.value,
                       ),
                     )),
                 Obx(() {
@@ -910,6 +978,7 @@ class OnlineCustomMoveIndicator extends StatelessWidget {
                           boardCtrl.reviewMode.value ? 'REVIEW MODE' : null,
                       engineThinking: false,
                       context: context,
+                      playSounds: settings.soundEnabled.value,
                     ),
                   )),
               Obx(() {

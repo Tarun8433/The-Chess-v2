@@ -21,6 +21,9 @@ class GameController extends GetxController {
   final committingTimeout = false.obs;
   final endedDialogShown = false.obs;
   final historyUploaded = false.obs;
+  // Auto-join error reporting and retries
+  final joinError = ''.obs;
+  final joinRetries = 0.obs;
 
   // Derived reactive labels
   final whiteLabel = ''.obs;
@@ -82,6 +85,11 @@ class GameController extends GetxController {
     // Clocks become active only when both seated and at least one move made (white moved)
     clocksActive.value = bothSeated.value && moveCount.value > 0;
     _recomputeLabels();
+  }
+
+  void resetJoinState() {
+    joinAttempted.value = false;
+    joinError.value = '';
   }
 
   String _formatMs(int ms) {

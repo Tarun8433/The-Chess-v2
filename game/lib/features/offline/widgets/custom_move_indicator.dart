@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:simple_chess_board/simple_chess_board.dart';
   import 'package:simple_chess_board_usage/theme/my_colors.dart';
 import '../controllers/board_ui_controller.dart';
+import '../../settings/settings_controller.dart';
 
 class CustomMoveIndicator extends StatefulWidget {
   const CustomMoveIndicator({super.key});
@@ -58,10 +59,20 @@ class _CustomMoveIndicatorState extends State<CustomMoveIndicator> {
 
   @override
   Widget build(BuildContext context) {
+    final settings = Get.put(SettingsController());
     return Scaffold(
       appBar: AppBar(
         title: Text("With custom move indicator"),
         actions: [
+          Obx(() => Row(
+                children: [
+                  const Text('Sound', style: TextStyle(fontSize: 12)),
+                  Switch(
+                    value: settings.soundEnabled.value,
+                    onChanged: (v) => settings.setSoundEnabled(v),
+                  ),
+                ],
+              )),
           IconButton(
             onPressed: () {
               ctrl.toggleOrientation();
@@ -93,6 +104,7 @@ class _CustomMoveIndicatorState extends State<CustomMoveIndicator> {
               whitePlayerType: PlayerType.human,
               blackPlayerType: PlayerType.human,
               showPossibleMoves: true,
+              playSounds: settings.soundEnabled.value,
           // Custom widget for normal moves (empty squares)
           normalMoveIndicatorBuilder: (cellSize) => SizedBox(
             width: cellSize,

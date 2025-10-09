@@ -90,7 +90,38 @@ class _AvailableGamesHomeState extends State<AvailableGamesHome> {
       final hasResponse = gameRoomResponse.response != null &&
           gameRoomResponse.response!.isNotEmpty;
       if (!hasResponse) {
-        // No room info returned; create one and enter
+        // No room info returned; re-check once to avoid stale cache or race
+        try {
+          final confirmResp = await http.post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'Roomid': '',
+              'Gameid': gameId,
+              'Playerid': '',
+            }),
+          );
+          final confirm = GameRoomResponse.fromJson(
+            jsonDecode(confirmResp.body) as Map<String, dynamic>,
+          );
+          final confirmHasRoom = confirm.response != null &&
+              confirm.response!.isNotEmpty &&
+              (confirm.response!.first.roomId ?? '').isNotEmpty;
+          if (confirmHasRoom) {
+            final firstRoom = confirm.response!.first;
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => OnlineCustomMoveIndicator(
+                  gameId: firstRoom.roomId!,
+                  playerId: _playerIdCtrl.text.trim(),
+                  initialTimeMs: kDefaultTimePerPlayerMs,
+                ),
+              ),
+            );
+            return;
+          }
+        } catch (_) {}
+        // Still no room info; create one and enter
         await _createAndEnter(gameId);
         return;
       }

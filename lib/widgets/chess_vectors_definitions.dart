@@ -730,3 +730,5 @@ final blackKingDefinition = <VectorDrawableElement>[
     ),
   ),
 ];
+
+
